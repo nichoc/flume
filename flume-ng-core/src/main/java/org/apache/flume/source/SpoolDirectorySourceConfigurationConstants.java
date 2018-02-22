@@ -43,6 +43,25 @@ public class SpoolDirectorySourceConfigurationConstants {
   public static final String BASENAME_HEADER = "basenameHeader";
   public static final boolean DEFAULT_BASENAME_HEADER = false;
 
+  /** Cootek modify. Whether to include the basename splitter of a file in a header. */
+  public static final String BASENAME_SPLIT_HEADER = "basenameSplitHeader";
+  public static final boolean DEFAULT_BASENAME_SPLIT_HEADER = false;
+
+  /** Cootek modify. Header in which to put the basename splitter of file. */
+  public static final String BASENAME_SPLIT_HEADER_KEY_0 = "basenameSplitHeaderKey0";
+  public static final String DEFAULT_BASENAME_SPLIT_HEADER_KEY_0 = "basenameSplit0";
+
+  public static final String BASENAME_SPLIT_HEADER_KEY_1 = "basenameSplitHeaderKey1";
+  public static final String DEFAULT_BASENAME_SPLIT_HEADER_KEY_1 = "basenameSplit1";
+
+  /** Cootek modify. Header in which to put the basename splitter of file. */
+  public static final String BASENAME_SPLITTER_KEY = "basenameSplitterKey";
+  public static final String DEFAULT_BASENAME_SPLITTER = "_";
+
+  /** Cootek modify. Header in which to put the basename split index of file. */
+  public static final String BASENAME_SPLIT_INDEX_KEY = "basenameSplitIndexKey";
+  public static final int DEFAULT_BASENAME_SPLIT_INDEX = 1;
+
   /** What size to batch with before sending to ChannelProcessor. */
   public static final String BATCH_SIZE = "batchSize";
   public static final int DEFAULT_BATCH_SIZE = 100;

@@ -54,6 +54,14 @@ public class SpoolDirectorySource extends AbstractSource
   private String spoolDirectory;
   private boolean fileHeader;
   private String fileHeaderKey;
+
+  /** cootek modify */
+  private boolean basenameSplitHeader;
+  private String basenameSplitHeaderKey0;
+  private String basenameSplitHeaderKey1;
+  private String basenameSplitter;
+  private int basenameSplitIndex;
+
   private boolean basenameHeader;
   private String basenameHeaderKey;
   private int batchSize;
@@ -87,6 +95,7 @@ public class SpoolDirectorySource extends AbstractSource
 
     File directory = new File(spoolDirectory);
     try {
+      /** cootek modify */
       reader = new ReliableSpoolingFileEventReader.Builder()
           .spoolDirectory(directory)
           .completedSuffix(completedSuffix)
@@ -97,6 +106,11 @@ public class SpoolDirectorySource extends AbstractSource
           .fileNameHeader(fileHeaderKey)
           .annotateBaseName(basenameHeader)
           .baseNameHeader(basenameHeaderKey)
+          .annotateBaseNameSplit(basenameSplitHeader)
+          .baseNameSplitHeader0(basenameSplitHeaderKey0)
+          .baseNameSplitHeader1(basenameSplitHeaderKey1)
+          .baseNameSplitter(basenameSplitter)
+          .baseNameSplitIndex(basenameSplitIndex)
           .deserializerType(deserializerType)
           .deserializerContext(deserializerContext)
           .deletePolicy(deletePolicy)
@@ -157,6 +171,19 @@ public class SpoolDirectorySource extends AbstractSource
         DEFAULT_BASENAME_HEADER);
     basenameHeaderKey = context.getString(BASENAME_HEADER_KEY,
         DEFAULT_BASENAME_HEADER_KEY);
+
+    /** cootek modify */
+    basenameSplitHeader = context.getBoolean(BASENAME_SPLIT_HEADER,
+            DEFAULT_BASENAME_SPLIT_HEADER);
+    basenameSplitHeaderKey0 = context.getString(BASENAME_SPLIT_HEADER_KEY_0,
+            DEFAULT_BASENAME_SPLIT_HEADER_KEY_0);
+    basenameSplitHeaderKey1 = context.getString(BASENAME_SPLIT_HEADER_KEY_1,
+            DEFAULT_BASENAME_SPLIT_HEADER_KEY_1);
+    basenameSplitter = context.getString(BASENAME_SPLITTER_KEY,
+            DEFAULT_BASENAME_SPLITTER);
+    basenameSplitIndex = context.getInteger(BASENAME_SPLIT_INDEX_KEY,
+            DEFAULT_BASENAME_SPLIT_INDEX);
+
     batchSize = context.getInteger(BATCH_SIZE,
         DEFAULT_BATCH_SIZE);
     inputCharset = context.getString(INPUT_CHARSET, DEFAULT_INPUT_CHARSET);

@@ -32,10 +32,11 @@ import org.apache.flume.event.EventBuilder;
 import org.apache.flume.serialization.DecodeErrorPolicy;
 import org.apache.flume.serialization.DurablePositionTracker;
 import org.apache.flume.serialization.EventDeserializer;
-import org.apache.flume.serialization.EventDeserializerFactory;
 import org.apache.flume.serialization.PositionTracker;
-import org.apache.flume.serialization.ResettableFileInputStream;
 import org.apache.flume.serialization.ResettableInputStream;
+import org.apache.flume.serialization.ResettableFileInputStream;
+import org.apache.flume.serialization.ResettableGZFileInputStream;
+import org.apache.flume.serialization.EventDeserializerFactory;
 import org.apache.flume.source.SpoolDirectorySourceConfigurationConstants;
 import org.apache.flume.source.SpoolDirectorySourceConfigurationConstants.ConsumeOrder;
 import org.apache.flume.tools.PlatformDetect;
@@ -51,6 +52,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
@@ -88,6 +91,7 @@ public class ReliableSpoolingFileEventReader implements ReliableEventReader {
       .getLogger(ReliableSpoolingFileEventReader.class);
 
   static final String metaFileName = ".flumespool-main.meta";
+  private final String GZIP_FILE_EXTENTION = ".gz";
   private final File spoolDirectory;
   private final String completedSuffix;
   private final String deserializerType;
@@ -97,6 +101,14 @@ public class ReliableSpoolingFileEventReader implements ReliableEventReader {
   private final File metaFile;
   private final boolean annotateFileName;
   private final boolean annotateBaseName;
+
+  /** cootek modify */
+  private final boolean annotateBaseNameSplit;
+  private final String baseNameSplitHeader0;
+  private final String baseNameSplitHeader1;
+  private final String baseNameSplitter;
+  private final int baseNameSplitIndex;
+
   private final String fileNameHeader;
   private final String baseNameHeader;
   private final String deletePolicy;
@@ -117,11 +129,14 @@ public class ReliableSpoolingFileEventReader implements ReliableEventReader {
 
   /**
    * Create a ReliableSpoolingFileEventReader to watch the given directory.
+   * cootek modify, core function
    */
   private ReliableSpoolingFileEventReader(File spoolDirectory,
       String completedSuffix, String includePattern, String ignorePattern, String trackerDirPath,
       boolean annotateFileName, String fileNameHeader,
       boolean annotateBaseName, String baseNameHeader,
+      boolean annotateBaseNameSplit, String basenameSplitHeader0, String basenameSplitHeader1,
+      String baseNameSplitter, int baseNameSplitIndex,
       String deserializerType, Context deserializerContext,
       String deletePolicy, String inputCharset,
       DecodeErrorPolicy decodeErrorPolicy,
@@ -185,6 +200,14 @@ public class ReliableSpoolingFileEventReader implements ReliableEventReader {
     this.fileNameHeader = fileNameHeader;
     this.annotateBaseName = annotateBaseName;
     this.baseNameHeader = baseNameHeader;
+
+    /** cootek modify */
+    this.annotateBaseNameSplit = annotateBaseNameSplit;
+    this.baseNameSplitHeader0 = basenameSplitHeader0;
+    this.baseNameSplitHeader1 = basenameSplitHeader1;
+    this.baseNameSplitter = baseNameSplitter;
+    this.baseNameSplitIndex = baseNameSplitIndex;
+
     this.includePattern = Pattern.compile(includePattern);
     this.ignorePattern = Pattern.compile(ignorePattern);
     this.deletePolicy = deletePolicy;
@@ -358,10 +381,59 @@ public class ReliableSpoolingFileEventReader implements ReliableEventReader {
 
     if (annotateBaseName) {
       String basename = currentFile.get().getFile().getName();
+      // clean up the compress file suffix
+      if (basename.endsWith(GZIP_FILE_EXTENTION)) {
+        basename = basename.substring(0, basename.lastIndexOf("."));
+      }
+      String splitName0 = "";
+      String splitName1 = basename;
+      if (annotateBaseNameSplit) {
+        String[] splitArray = splitName1.split(baseNameSplitter);
+        splitName0 = splitArray[baseNameSplitIndex];
+        String basenameReplace = "";
+        for (int i = 0; i < baseNameSplitIndex; i++) {
+          basenameReplace += splitArray[i] + baseNameSplitter;
+        }
+        splitName1 = splitName1.replace(basenameReplace, "");
+        if (isValidDate(splitName0)) {
+          String rawName = splitName0.substring(0, 8);
+          splitName1 = splitName1.replaceFirst(splitName0, rawName);
+          splitName0 = rawName;
+        } else {
+          logger.error("Log named " + basename + " not match the normal format!");
+        }
+      }
       for (Event event : events) {
         event.getHeaders().put(baseNameHeader, basename);
+        if (annotateBaseNameSplit) {
+          event.getHeaders().put(baseNameSplitHeader0, splitName0);
+          event.getHeaders().put(baseNameSplitHeader1, splitName1);
+        }
       }
     }
+  }
+
+  private boolean isValidDate(String dateStr) {
+
+    if (dateStr == null) {
+      return false;
+    }
+
+    //set the format to use as a constructor argument
+    SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMddHH");
+
+    if (dateStr.trim().length() != dateFormat.toPattern().length()) {
+      return false;
+    }
+
+    dateFormat.setLenient(false);
+
+    try {
+      dateFormat.parse(dateStr.trim());
+    } catch (ParseException pe) {
+      return false;
+    }
+    return true;
   }
 
   @Override
@@ -590,10 +662,16 @@ public class ReliableSpoolingFileEventReader implements ReliableEventReader {
           "Tracker target %s does not equal expected filename %s",
           tracker.getTarget(), nextPath);
 
-      ResettableInputStream in =
-          new ResettableFileInputStream(file, tracker,
-              ResettableFileInputStream.DEFAULT_BUF_SIZE, inputCharset,
-              decodeErrorPolicy);
+      ResettableInputStream in = null;
+      if (file != null && (file.getName().endsWith(GZIP_FILE_EXTENTION))) {
+        in = new ResettableGZFileInputStream(file, tracker,
+                ResettableFileInputStream.DEFAULT_BUF_SIZE, inputCharset,
+                decodeErrorPolicy);
+      } else {
+        in = new ResettableFileInputStream(file, tracker,
+                ResettableFileInputStream.DEFAULT_BUF_SIZE, inputCharset,
+                decodeErrorPolicy);
+      }
       EventDeserializer deserializer =
           EventDeserializerFactory.getInstance(deserializerType, deserializerContext, in);
 
@@ -604,7 +682,39 @@ public class ReliableSpoolingFileEventReader implements ReliableEventReader {
       return Optional.absent();
     } catch (IOException e) {
       logger.error("Exception opening file: " + file, e);
+      try {
+        renameErrorFile(file);
+      } catch (IOException e1) {
+        logger.error("Exception renaming error file: " + file, e);
+      }
       return Optional.absent();
+    }
+  }
+
+  private void renameErrorFile(File fileToRoll) throws IOException {
+    File dest = new File(fileToRoll.getPath() + completedSuffix);
+    logger.info("Preparing to move file {} to {}", fileToRoll, dest);
+
+    if (dest.exists()) {
+      boolean deleted = fileToRoll.delete();
+      logger.info("dest exist,delete source file {} {}",fileToRoll,deleted);
+    } else {
+      boolean renamed = fileToRoll.renameTo(dest);
+      if (renamed) {
+        logger.debug("Successfully rolled file {} to {}", fileToRoll,dest);
+      } else {
+        /*
+         * If we are here then the file cannot be renamed for a reason
+         * other than that the destination file exists (actually, that
+         * remains possible w/ small probability due to TOC-TOU
+         * conditions).
+         * */
+        String message = "Unable to move " + fileToRoll
+              + " to " + dest
+              + ". This will likely cause duplicate events. Please verify that "
+              + "flume has sufficient permissions to perform these operations.";
+        throw new FlumeException(message);
+      }
     }
   }
 
@@ -676,6 +786,19 @@ public class ReliableSpoolingFileEventReader implements ReliableEventReader {
         SpoolDirectorySourceConfigurationConstants.DEFAULT_BASENAME_HEADER;
     private String baseNameHeader =
         SpoolDirectorySourceConfigurationConstants.DEFAULT_BASENAME_HEADER_KEY;
+
+    /** cootek modify */
+    private Boolean annotateBaseNameSplit =
+            SpoolDirectorySourceConfigurationConstants.DEFAULT_BASENAME_SPLIT_HEADER;
+    private String baseNameSplitHeader0 =
+            SpoolDirectorySourceConfigurationConstants.DEFAULT_BASENAME_SPLIT_HEADER_KEY_0;
+    private String baseNameSplitHeader1 =
+            SpoolDirectorySourceConfigurationConstants.DEFAULT_BASENAME_SPLIT_HEADER_KEY_1;
+    private String baseNameSplitter =
+            SpoolDirectorySourceConfigurationConstants.DEFAULT_BASENAME_SPLITTER;
+    private int baseNameSplitIndex =
+            SpoolDirectorySourceConfigurationConstants.DEFAULT_BASENAME_SPLIT_INDEX;
+
     private String deserializerType =
         SpoolDirectorySourceConfigurationConstants.DEFAULT_DESERIALIZER;
     private Context deserializerContext = new Context();
@@ -736,6 +859,35 @@ public class ReliableSpoolingFileEventReader implements ReliableEventReader {
       return this;
     }
 
+    /* boolean, split baseName or not */
+    public Builder annotateBaseNameSplit(Boolean annotateBaseNameSplit) {
+      this.annotateBaseNameSplit = annotateBaseNameSplit;
+      return this;
+    }
+
+    /* String, baseName header */
+    public Builder baseNameSplitHeader0(String baseNameSplitHeader0) {
+      this.baseNameSplitHeader0 = baseNameSplitHeader0;
+      return this;
+    }
+
+    public Builder baseNameSplitHeader1(String baseNameSplitHeader1) {
+      this.baseNameSplitHeader1 = baseNameSplitHeader1;
+      return this;
+    }
+
+    /* String, baseName splitter */
+    public Builder baseNameSplitter(String baseNameSplitter) {
+      this.baseNameSplitter = baseNameSplitter;
+      return this;
+    }
+
+    /* int, baseName split index */
+    public Builder baseNameSplitIndex(int baseNameSplitIndex) {
+      this.baseNameSplitIndex = baseNameSplitIndex;
+      return this;
+    }
+
     public Builder deserializerType(String deserializerType) {
       this.deserializerType = deserializerType;
       return this;
@@ -771,10 +923,13 @@ public class ReliableSpoolingFileEventReader implements ReliableEventReader {
       return this;
     }
 
+    /** cootek modify */
     public ReliableSpoolingFileEventReader build() throws IOException {
       return new ReliableSpoolingFileEventReader(spoolDirectory, completedSuffix,
           includePattern, ignorePattern, trackerDirPath, annotateFileName, fileNameHeader,
-          annotateBaseName, baseNameHeader, deserializerType,
+          annotateBaseName, baseNameHeader,
+          annotateBaseNameSplit, baseNameSplitHeader0, baseNameSplitHeader1,
+          baseNameSplitter, baseNameSplitIndex, deserializerType,
           deserializerContext, deletePolicy, inputCharset, decodeErrorPolicy,
           consumeOrder, recursiveDirectorySearch);
     }
