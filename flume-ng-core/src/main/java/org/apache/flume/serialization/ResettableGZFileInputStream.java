@@ -116,6 +116,8 @@ public class ResettableGZFileInputStream extends ResettableInputStream
   private long syncPosition;
   private int maxCharWidth;
 
+  private final GZIPInputStream gzStream;
+
   private ReadableByteChannel byteChannel;
 
 
@@ -180,7 +182,7 @@ public class ResettableGZFileInputStream extends ResettableInputStream
     this.in = new FileInputStream(file);
     // add gz file process
     try {
-      GZIPInputStream gzStream = new GZIPInputStream(Channels.newInputStream(this.in.getChannel()));
+      this.gzStream = new GZIPInputStream(Channels.newInputStream(this.in.getChannel()));
       this.byteChannel = Channels.newChannel(gzStream);
     } catch (IOException ioe) {
       this.in.close();
@@ -230,6 +232,10 @@ public class ResettableGZFileInputStream extends ResettableInputStream
     seek(tracker.getPosition());
   }
 
+  public GZIPInputStream getGzStream() {
+    return this.gzStream;
+  }
+
   @Override
   public synchronized int read() throws IOException {
     int len = read(byteBuf, 0, 1);
@@ -277,7 +283,8 @@ public class ResettableGZFileInputStream extends ResettableInputStream
     // The decoder can have issues with multi-byte characters.
     // This check ensures that there are at least maxCharWidth bytes in the buffer
     // before reaching EOF.
-    if (buf.remaining() < maxCharWidth) {
+    // if (buf.remaining() < maxCharWidth) {
+    if (buf.remaining() <= 0) {
       buf.clear();
       buf.flip();
       refillBuf();
